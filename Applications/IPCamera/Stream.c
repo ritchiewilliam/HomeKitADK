@@ -21,6 +21,7 @@ typedef struct _VideoData
     GstElement *download;
     GstElement *convert;
     GstElement *encode;
+    GstElement *encodecaps;
     GstElement *payload;
 } VideoData;
 
@@ -91,27 +92,49 @@ const SupportedVideoConfig videoConfig = {
 
         },
         //
+        // .attributes = {
+        //     {
+        //         .image_width = 1280,
+        //         .image_height = 720,
+        //         .frame_rate = 30
+        //     },
+        //     {
+        //         .image_width = 640,
+        //         .image_height = 360,
+        //         .frame_rate = 30
+        //     },
+        //     {
+        //         .image_width = 480,
+        //         .image_height = 270, // Fixed to standard 16:9
+        //         .frame_rate = 30
+        //     },
+        //     {
+        //         .image_width = 320,
+        //         .image_height = 180, // Recommended for Apple Watch / PiP
+        //         .frame_rate = 30
+        //     }
+        // }
         .attributes = {
-            {
-                .image_width = 1280,
-                .image_height = 720,
-                .frame_rate = 30
-            },
-            {
-                .image_width = 640,
-                .image_height = 360,
-                .frame_rate = 30
-            },
-            {
-                .image_width = 480,
-                .image_height = 270, // Fixed to standard 16:9
-                .frame_rate = 30
-            },
-            {
-                .image_width = 320,
-                .image_height = 180, // Recommended for Apple Watch / PiP
-                .frame_rate = 30
-            }
+                {
+                    .image_height = 1280,
+                    .image_width = 720,
+                    .frame_rate = 30
+                },
+                {
+                    .image_height = 640,
+                    .image_width = 360,
+                    .frame_rate = 30
+                },
+                {
+                    .image_height = 480,
+                    .image_width = 270, // Fixed to standard 16:9
+                    .frame_rate = 30
+                },
+                {
+                    .image_height = 320,
+                    .image_width = 180, // Recommended for Apple Watch / PiP
+                    .frame_rate = 30
+                }
         }
     }
 };
@@ -120,7 +143,7 @@ const Endpoints globalAccessoryEndpoints = {
     .crypto_suite = kHAPTLVValue_SRTPCryptoSuite_AES128,
     .address = {
         .ip_version = kHAPTLVValue_IPAddressVersion_IPV4,
-        .ip_address =  "192.168.8.216",
+        .ip_address =  "192.168.0.112",
         .video_rtp_port = 5000,
         .audio_rtp_port = 5001,
     }
@@ -234,6 +257,7 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
     video.scale  = gst_element_factory_make ("cudaconvertscale", "scale"); // Hardware scaler/converter
     video.caps = gst_element_factory_make("capsfilter", "filter");
     video.encode = gst_element_factory_make ("nvh264enc", "encode");    // Hardware encoder
+    video.encodecaps = gst_element_factory_make ("capsfilter", "profilefilter");
     video.payload = gst_element_factory_make ("rtph264pay", "payload");
 
     HAPLogInfo(&kHAPLog_Default, "Initializing audio elements");
@@ -268,7 +292,7 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
     GstElement* pipeline = gst_pipeline_new("camera-pipeline");
 
     if (!pipeline || !video.source || !video.demux || !video.parse || !video.rate || !video.ratecaps || !video.decode ||
-        !video.scale || !video.caps || !video.encode || !video.payload ||
+        !video.scale || !video.caps || !video.encode || !video.encodecaps || !video.payload ||
         !audio.source || !audio.demux || !audio.decode || !audio.identity || !audio.convert || !audio.resample ||
         !audio.encode || !audio.payload ||
         !network.rtp || !network.sink_srtp || !network.src_srtp || !network.src_srtpcaps|| !network.funnel ||
@@ -291,6 +315,8 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
     );
     g_object_set(video.caps, "caps", scale_caps, NULL);
     gst_caps_unref(scale_caps);
+
+    g_object_set(video.scale, "video-direction", 1, NULL);
 
     // The minimum keyframe interval shall be 5 seconds ( 150 frames / 30 fps = 5 seconds)
     g_object_set(video.encode, "gop-size", 150, NULL);
@@ -315,7 +341,7 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
     g_object_set(networkAudio.src_udp,  "port", accessoryEndpoints->address.audio_rtp_port, NULL);
 
     gst_bin_add_many (GST_BIN (pipeline), video.source, video.demux, video.parse, video.rate, video.ratecaps,
-        video.decode, video.scale, video.caps, /*video.download, video.convert,*/ video.encode, video.payload,
+        video.decode, video.scale, video.caps, video.encode, video.encodecaps, video.payload,
         audio.source, audio.demux, audio.decode, audio.identity, audio.convert, audio.resample, audio.encode, audio.payload,
         network.rtp, network.sink_srtp, network.src_srtp, network.src_srtpcaps, network.funnel, network.sink_udp, /*network.sink_rtcp_udp,*/ network.src_udp,
         networkAudio.sink_srtp, networkAudio.src_srtp, networkAudio.src_srtpcaps, networkAudio.funnel, networkAudio.sink_udp, networkAudio.src_udp, NULL);
@@ -330,16 +356,19 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
     g_object_set(video.ratecaps, "caps", rate_caps, NULL);
     gst_caps_unref(rate_caps);
 
-    gboolean link_rest = gst_element_link_many(video.rate, video.ratecaps, video.decode, video.scale, video.caps, video.encode, NULL);
-
     GstCaps *encode_caps = gst_caps_new_simple("video/x-h264",
         "profile", G_TYPE_STRING, profileID[videoConfig.codec_config.codec_parameters[0].profile_id],
         "level", G_TYPE_STRING, level[videoConfig.codec_config.codec_parameters[0].level],
         NULL);
-    gboolean link_encode_payload = gst_element_link_filtered(video.encode, video.payload, encode_caps);
+    g_object_set(video.encodecaps, "caps", encode_caps, NULL);
     gst_caps_unref(encode_caps);
 
-    if (!link_parse_rate || !link_rest || !link_encode_payload) {
+    gboolean link_rest = gst_element_link_many(video.rate, video.ratecaps, video.decode, video.scale, video.caps,
+        video.encode, video.encodecaps, video.payload, NULL);
+
+    // gboolean link_encode_payload = gst_element_link_filtered(video.encode, video.payload, encode_caps);
+
+    if (!link_parse_rate || !link_rest) {
         HAPLogError(&kHAPLog_Default, "Video elements could not be linked.\n");
         gst_object_unref (pipeline);
         return NULL;
@@ -353,7 +382,7 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
       "application/x-rtp, "
       "media=(string)video, "
       "encoding-name=(string)H264, "
-      "packetization-mode=(int)1"
+      "packetization-mode=(string)1"
     );
     // Link should cause trigger of previous callback to link rtpbin with funnel
     gst_element_link_pads_filtered(video.payload, "src", network.rtp, "send_rtp_sink_0",
@@ -398,7 +427,7 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
 
     /* Set the URI to play */
     g_object_set (video.source, "uri",
-        "http://192.168.8.157:8080/stream.mjpg",
+        "http://192.168.0.173:8080/stream.mjpg",
         NULL);
 
     source_params.sink = video.demux;
@@ -509,6 +538,12 @@ void ConfigurePipeline(const Endpoints *controllerEndpoints, const Endpoints *ac
         "port", controllerEndpoints->address.audio_rtp_port, NULL);
 
     // Profile and Level do not need to be redone as only one option.
+    GstCaps *encode_caps = gst_caps_new_simple("video/x-h264",
+        "profile", G_TYPE_STRING, profileID[config->selected_video_parameters.codec_parameters.profile_id],
+        "level", G_TYPE_STRING, level[config->selected_video_parameters.codec_parameters.level],
+        NULL);
+    g_object_set(video.encodecaps, "caps", encode_caps, NULL);
+    gst_caps_unref(encode_caps);
 
     // Payload Types and bitrates
     g_object_set(video.encode, "bitrate", (int)config->selected_video_parameters.rtp_parameters.max_bitrate, NULL);
