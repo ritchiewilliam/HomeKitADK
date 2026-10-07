@@ -200,6 +200,8 @@ void HandleUpdatedState(HAPAccessoryServerRef* _Nonnull server, void* _Nullable 
         // Re-initialize App.
         AppCreate(server, &platform.keyValueStore);
 
+        SwitchEventCreateFileHandle();
+
         // Restart accessory server.
         AppAccessoryServerStart();
         return;
@@ -305,6 +307,9 @@ int main(int argc HAP_UNUSED, char* _Nullable argv[_Nullable] HAP_UNUSED) {
 
     // Create app object.
     AppCreate(&accessoryServer, &platform.keyValueStore);
+
+    SwitchEventCreateFileHandle();
+
     // Start accessory server for App.
     AppAccessoryServerStart();
 

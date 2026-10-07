@@ -42,13 +42,25 @@ CFLAGS_Debug := -O0 -g -DHAP_LOG_LEVEL=$(LOG_LEVEL_Debug) -DHAP_TESTING
 CFLAGS_Test :=  -O0 -g -DHAP_LOG_LEVEL=$(LOG_LEVEL_Test) -DHAP_TESTING
 CFLAGS_Release := -O2 -g -DHAP_LOG_LEVEL=$(LOG_LEVEL_Release) -DHAP_DISABLE_ASSERTS=1 -DHAP_DISABLE_PRECONDITIONS=1
 
-OPENSSL_PATH = $(firstword $(wildcard /usr/local/Cellar/openssl@1.1/*))
+OPENSSL_PATH = $(firstword $(wildcard /usr/lib/openssl-1.1))
 MBEDTLS_PATH = $(firstword $(wildcard /usr/include/mbedtls) $(wildcard /usr/local/Cellar/mbedtls/*))
 
 -include Build/Makefile.$(PAL)
 
-CFLAGS_OpenSSL := -I$(OPENSSL_PATH)/include
-LDFLAGS_OpenSSL := -L$(OPENSSL_PATH)/lib -lcrypto
+CFLAGS_OpenSSL := -I/usr/include/openssl-1.1
+LDFLAGS_OpenSSL := -L/usr/lib/openssl-1.1 -lcrypto
+
+CFLAGS_GST := $(shell pkg-config --cflags gstreamer-1.0)
+LDFLAGS_GST := $(shell pkg-config --libs gstreamer-1.0)
+
+#OPENSSL_PATH = $(firstword $(wildcard /usr/local/Cellar/openssl@1.1/*))
+#MBEDTLS_PATH = $(firstword $(wildcard /usr/include/mbedtls) $(wildcard /usr/local/Cellar/mbedtls/*))
+
+
+#-include Build/Makefile.$(PAL)
+
+#CFLAGS_OpenSSL := -I$(OPENSSL_PATH)/include
+#LDFLAGS_OpenSSL := -L$(OPENSSL_PATH)/lib -lcrypto
 
 CFLAGS_MbedTLS := -I$(MBEDTLS_PATH)/include
 LDFLAGS_MbedTLS := -L$(MBEDTLS_PATH)/lib -lmbedcrypto
@@ -57,8 +69,8 @@ CFLAGS_IP := -DIP=1
 CFLAGS_BLE := -DBLE=1
 
 SRC_DIRS += $(SRC_DIRS_$(PAL))
-CFLAGS += $(CFLAGS_$(PAL))
-LDFLAGS += $(LDFLAGS_$(PAL))
+CFLAGS += $(CFLAGS_$(PAL)) $(CFLAGS_GST)
+LDFLAGS += $(LDFLAGS_$(PAL)) $(LDFLAGS_GST)
 CRYPTO_DIRS += $(CRYPTO_$(PAL))
 
 OUTPUT_DIR := Output/$(PAL)-$(COMPILER)

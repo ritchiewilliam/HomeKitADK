@@ -4,9 +4,10 @@
 // you may not use this file except in compliance with the License.
 // See [CONTRIBUTORS.md] for the list of HomeKit ADK project authors.
 
+#define OPENSSL_SUPPRESS_DEPRECATED
+
 #include "HAP+Internal.h"
 #include "HAPCrypto.h"
-
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/kdf.h>

@@ -134,7 +134,7 @@ if [[ -z "$accessorySetupGenerator" ]]; then
   exit
 fi
 
-sdkDomainsFile="$ADK_ROOT/PAL/Raspi/HAPPlatformKeyValueStore+SDKDomains.h"
+sdkDomainsFile="$ADK_ROOT/PAL/Linux/HAPPlatformKeyValueStore+SDKDomains.h"
 
 ################################################################################
 # Parse command line.
@@ -383,6 +383,8 @@ else
         fail "Failed to provision ${destination}."
     fi
 fi
+
+echo "${command}"
 
 ################################################################################
 # Display information to print on label.

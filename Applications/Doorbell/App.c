@@ -25,10 +25,14 @@
 //
 //   6. Callbacks that notify the server in case their associated value has changed.
 
-#include "../../HAP/HAP.h"
-
+#include "HAPPlatform.h"
+#include "HAPPlatformFileHandle.h"
+#include "HAPPlatformLog+Init.h"
 #include "App.h"
 #include "DB.h"
+#include <unistd.h>
+#include <errno.h>
+#include <fcntl.h>
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 /**
@@ -52,7 +56,7 @@
  */
 typedef struct {
     struct {
-        bool lightBulbOn;
+        uint8_t switchEvent;
     } state;
     HAPAccessoryServerRef* server;
     HAPPlatformKeyValueStoreRef keyValueStore;
@@ -93,26 +97,27 @@ static void LoadAccessoryState(void) {
         }
         HAPRawBufferZero(&accessoryConfiguration.state, sizeof accessoryConfiguration.state);
     }
+    accessoryConfiguration.state.switchEvent = 0;
 }
-
-/**
- * Save the accessory state to persistent memory.
- */
-static void SaveAccessoryState(void) {
-    HAPPrecondition(accessoryConfiguration.keyValueStore);
-
-    HAPError err;
-    err = HAPPlatformKeyValueStoreSet(
-            accessoryConfiguration.keyValueStore,
-            kAppKeyValueStoreDomain_Configuration,
-            kAppKeyValueStoreKey_Configuration_State,
-            &accessoryConfiguration.state,
-            sizeof accessoryConfiguration.state);
-    if (err) {
-        HAPAssert(err == kHAPError_Unknown);
-        HAPFatalError();
-    }
-}
+//
+// /**
+//  * Save the accessory state to persistent memory.
+//  */
+// static void SaveAccessoryState(void) {
+//     HAPPrecondition(accessoryConfiguration.keyValueStore);
+//
+//     HAPError err;
+//     err = HAPPlatformKeyValueStoreSet(
+//             accessoryConfiguration.keyValueStore,
+//             kAppKeyValueStoreDomain_Configuration,
+//             kAppKeyValueStoreKey_Configuration_State,
+//             &accessoryConfiguration.state,
+//             sizeof accessoryConfiguration.state);
+//     if (err) {
+//         HAPAssert(err == kHAPError_Unknown);
+//         HAPFatalError();
+//     }
+// }
 
 //----------------------------------------------------------------------------------------------------------------------
 
@@ -122,21 +127,85 @@ static void SaveAccessoryState(void) {
  * Note: Not constant to enable BCT Manual Name Change.
  */
 static HAPAccessory accessory = { .aid = 1,
-                                  .category = kHAPAccessoryCategory_Lighting,
-                                  .name = "Acme Light Bulb",
-                                  .manufacturer = "Acme",
-                                  .model = "LightBulb1,1",
-                                  .serialNumber = "099DB48E9E28",
+                                  .category = 1,
+                                  .name = "Williams Doorbell",
+                                  .manufacturer = "William",
+                                  .model = "Doorbell1,1",
+                                  .serialNumber = "0123456789ABC",
                                   .firmwareVersion = "1",
                                   .hardwareVersion = "1",
                                   .services = (const HAPService* const[]) { &accessoryInformationService,
-                                                                            &hapProtocolInformationService,
-                                                                            &pairingService,
-                                                                            &lightBulbService,
+                                                                            &doorbellService,
                                                                             NULL },
                                   .callbacks = { .identify = IdentifyAccessory } };
 
 //----------------------------------------------------------------------------------------------------------------------
+
+int fileDescriptor;
+HAPPlatformFileHandleRef switchFileHandleRef;
+
+static void HandleSwitchEventFileHandleCallback(
+        HAPPlatformFileHandleRef fileHandle,
+        HAPPlatformFileHandleEvent fileHandleEvents,
+        void* _Nullable context HAP_UNUSED) {
+    HAPAssert(fileHandle);
+    HAPAssert(fileHandleEvents.isReadyForReading);
+
+    uint8_t event = -1;
+    ssize_t n;
+    do {
+        n = read(fileDescriptor, &event, sizeof(accessoryConfiguration.state.switchEvent));
+    } while (n == -1 && errno != EINTR);
+    if (event < 48 || event > 50) {
+        return;
+    }
+
+    if (n == -1 && errno == EAGAIN) {
+        return;
+    }
+    if (n < 0) {
+        int _errno = errno;
+        HAPAssert(n == -1);
+        HAPPlatformLogPOSIXError(kHAPLogType_Error, "Self pipe read failed.", _errno, __func__, HAP_FILE, __LINE__);
+        HAPFatalError();
+    }
+    if (n == 0) {
+        HAPLogError(&kHAPLog_Default, "Received EOF.");
+        return;
+    }
+    accessoryConfiguration.state.switchEvent = event - 48;
+    HAPAccessoryServerRaiseEvent(accessoryConfiguration.server, &doorbellSwitchEventCharacteristic, &doorbellService, &accessory);
+}
+
+void SwitchEventCreateFileHandle() {
+    fileDescriptor = open("doorbell_ring", O_RDWR | O_NONBLOCK);
+
+    if (fileDescriptor == -1) {
+        HAPPlatformLogPOSIXError(
+                kHAPLogType_Error,
+                "Failed to open named pipe for doorbell ring",
+                errno,
+                __func__,
+                HAP_FILE,
+                __LINE__);
+        HAPFatalError();
+    }
+
+    HAPError err = HAPPlatformFileHandleRegister(
+            &switchFileHandleRef,
+            fileDescriptor,
+            (HAPPlatformFileHandleEvent) {
+                    .isReadyForReading = true, .isReadyForWriting = false, .hasErrorConditionPending = false },
+            HandleSwitchEventFileHandleCallback,
+            NULL);
+    if (err) {
+        HAPAssert(err == kHAPError_OutOfResources);
+        HAPLogError(&kHAPLog_Default, "Failed to register programmable switch file handle.");
+        HAPFatalError();
+    }
+}
+
+//----
 
 HAP_RESULT_USE_CHECK
 HAPError IdentifyAccessory(
@@ -148,31 +217,13 @@ HAPError IdentifyAccessory(
 }
 
 HAP_RESULT_USE_CHECK
-HAPError HandleLightBulbOnRead(
+HAPError HandleDoorbellSwitchEventOnRead(
         HAPAccessoryServerRef* server HAP_UNUSED,
-        const HAPBoolCharacteristicReadRequest* request HAP_UNUSED,
-        bool* value,
+        const HAPUInt8CharacteristicReadRequest* request HAP_UNUSED,
+        uint8_t* value,
         void* _Nullable context HAP_UNUSED) {
-    *value = accessoryConfiguration.state.lightBulbOn;
+    *value = accessoryConfiguration.state.switchEvent;
     HAPLogInfo(&kHAPLog_Default, "%s: %s", __func__, *value ? "true" : "false");
-
-    return kHAPError_None;
-}
-
-HAP_RESULT_USE_CHECK
-HAPError HandleLightBulbOnWrite(
-        HAPAccessoryServerRef* server,
-        const HAPBoolCharacteristicWriteRequest* request,
-        bool value,
-        void* _Nullable context HAP_UNUSED) {
-    HAPLogInfo(&kHAPLog_Default, "%s: %s", __func__, value ? "true" : "false");
-    if (accessoryConfiguration.state.lightBulbOn != value) {
-        accessoryConfiguration.state.lightBulbOn = value;
-
-        SaveAccessoryState();
-
-        HAPAccessoryServerRaiseEvent(server, request->characteristic, request->service, request->accessory);
-    }
 
     return kHAPError_None;
 }
@@ -220,6 +271,7 @@ void AccessoryServerHandleUpdatedState(HAPAccessoryServerRef* server, void* _Nul
             return;
         }
         case kHAPAccessoryServerState_Running: {
+
             HAPLogInfo(&kHAPLog_Default, "Accessory Server State did update: Running.");
             return;
         }
@@ -244,4 +296,6 @@ void AppInitialize(
 
 void AppDeinitialize() {
     /*no-op*/
+    close(fileDescriptor);
 }
+

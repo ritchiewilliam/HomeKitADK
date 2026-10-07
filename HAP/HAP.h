@@ -4487,6 +4487,7 @@ HAPError HAPLegacyImportControllerPairing(
 #endif
 
 #include "HAPCharacteristicTypes.h"
+#include "HAPCharacteristicTypes+TLV.h"
 #include "HAPRequestHandlers.h"
 #include "HAPServiceTypes.h"
 

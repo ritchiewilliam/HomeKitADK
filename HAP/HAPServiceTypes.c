@@ -89,3 +89,5 @@ const HAPUUID kHAPServiceType_CameraRTPStreamManagement = HAPUUIDCreateAppleDefi
 const HAPUUID kHAPServiceType_Microphone = HAPUUIDCreateAppleDefined(0x112);
 
 const HAPUUID kHAPServiceType_Speaker = HAPUUIDCreateAppleDefined(0x113);
+
+const HAPUUID kHAPServiceType_Doorbell = HAPUUIDCreateAppleDefined(0x121);

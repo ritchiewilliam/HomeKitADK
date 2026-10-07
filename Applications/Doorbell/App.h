@@ -17,7 +17,7 @@
 extern "C" {
 #endif
 
-#include "../../HAP/HAP.h"
+#include "HAP.h"
 
 #if __has_feature(nullability)
 #pragma clang assume_nonnull begin
@@ -32,25 +32,14 @@ HAPError IdentifyAccessory(
         const HAPAccessoryIdentifyRequest* request,
         void* _Nullable context);
 
-/**
- * Handle read request to the 'On' characteristic of the Light Bulb service.
- */
 HAP_RESULT_USE_CHECK
-HAPError HandleLightBulbOnRead(
+HAPError HandleDoorbellSwitchEventOnRead(
         HAPAccessoryServerRef* server,
-        const HAPBoolCharacteristicReadRequest* request,
-        bool* value,
+        const HAPUInt8CharacteristicReadRequest* request,
+        uint8_t* value,
         void* _Nullable context);
 
-/**
- * Handle write request to the 'On' characteristic of the Light Bulb service.
- */
-HAP_RESULT_USE_CHECK
-HAPError HandleLightBulbOnWrite(
-        HAPAccessoryServerRef* server,
-        const HAPBoolCharacteristicWriteRequest* request,
-        bool value,
-        void* _Nullable context);
+void SwitchEventCreateFileHandle();
 
 /**
  * Initialize the application.

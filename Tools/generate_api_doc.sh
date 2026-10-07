@@ -82,6 +82,7 @@ install_pip_package sphinx 2.4.4
 install_pip_package sphinx_rtd_theme 0.4.3
 install_pip_package breathe 4.14.1
 install_pip_package exhale 0.2.3
+install_pip_package mistune 0.8.4
 install_pip_package m2r 0.2.1
 
 echo "*****************"

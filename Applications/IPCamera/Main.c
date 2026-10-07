@@ -21,6 +21,8 @@
 #endif
 
 #include <signal.h>
+#include <stdlib.h>
+#include <time.h>
 static bool requestedFactoryReset = false;
 static bool clearPairings = false;
 
@@ -47,6 +49,7 @@ static struct {
     HAPPlatformMFiHWAuth mfiHWAuth;
     HAPPlatformMFiTokenAuth mfiTokenAuth;
 } platform;
+
 
 /**
  * HomeKit accessory server that hosts the accessory.
@@ -278,6 +281,7 @@ static void InitializeBLE() {
 #endif
 
 int main(int argc HAP_UNUSED, char* _Nullable argv[_Nullable] HAP_UNUSED) {
+
     HAPAssert(HAPGetCompatibilityVersion() == HAP_COMPATIBILITY_VERSION);
 
     // Initialize global platform objects.
