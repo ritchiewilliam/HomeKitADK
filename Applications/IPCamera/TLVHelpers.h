@@ -11,6 +11,7 @@ extern "C" {
 
 #include "HAP.h"
 
+
 #if __has_feature(nullability)
 #pragma clang assume_nonnull begin
 #endif
@@ -30,10 +31,25 @@ extern "C" {
 
 #define APPEND_TLV_WRITER_ARR(writer_ptr, tag, arr) \
     do { \
-        HAPLogInfo(&kHAPLog_Default, "%s: Appending %s", __func__, STRINGIFY(val)); \
+        HAPLogInfo(&kHAPLog_Default, "%s: Appending %s", __func__, STRINGIFY(arr)); \
         HAPError _err = AppendTLVWriterBuffer(writer_ptr, tag, arr, sizeof(arr)); \
         if (_err) { \
-            HAPLogError(&kHAPLog_Default, "%s: Out of resources when writing: %s", __func__, STRINGIFY(val)); \
+            HAPLogError(&kHAPLog_Default, "%s: Out of resources when writing: %s", __func__, STRINGIFY(arr)); \
+            HAPAssert((_err) == kHAPError_OutOfResources); \
+        return (_err); \
+        } \
+    } while (0)
+
+#define APPEND_TLV_WRITER_ARR_LOG(writer_ptr, tag, arr, bufferLog) \
+    do { \
+        HAPLogInfo(&kHAPLog_Default, "%s: Appending %s", __func__, STRINGIFY(arr)); \
+        if(bufferLog) { \
+            BufferToString(bufferLog, sizeof(bufferLog), arr, sizeof(arr)); \
+            HAPLogInfo(&kHAPLog_Default, "%s", bufferLog); \
+        } \
+        HAPError _err = AppendTLVWriterBuffer(writer_ptr, tag, arr, sizeof(arr)); \
+        if (_err) { \
+            HAPLogError(&kHAPLog_Default, "%s: Out of resources when writing: %s", __func__, STRINGIFY(arr)); \
             HAPAssert((_err) == kHAPError_OutOfResources); \
         return (_err); \
         } \

@@ -3,6 +3,7 @@
 //
 
 #include "Stream.h"
+#include "LogHelpers.h"
 #include <stdio.h>
 #include <gst/gst.h>
 
@@ -119,7 +120,7 @@ const Endpoints globalAccessoryEndpoints = {
     .crypto_suite = kHAPTLVValue_SRTPCryptoSuite_AES128,
     .address = {
         .ip_version = kHAPTLVValue_IPAddressVersion_IPV4,
-        .ip_address =  "192.168.0.112",
+        .ip_address =  "192.168.8.216",
         .video_rtp_port = 5000,
         .audio_rtp_port = 5001,
     }
@@ -397,7 +398,7 @@ GstElement * _Nullable InitPipeline(const Endpoints *accessoryEndpoints) {
 
     /* Set the URI to play */
     g_object_set (video.source, "uri",
-        "http://192.168.0.23:8080/stream.mjpg",
+        "http://192.168.8.157:8080/stream.mjpg",
         NULL);
 
     source_params.sink = video.demux;
@@ -448,17 +449,31 @@ void ConfigurePipeline(const Endpoints *controllerEndpoints, const Endpoints *ac
         accessoryEndpoints->audio_crypto_params.master_salt,
         sizeof(accessoryEndpoints->audio_crypto_params.master_salt));
 
+    char bufferLog[sizeof(controllerEndpoints->video_crypto_params.master_key) * 4];
+
+    HAPLogInfo(&kHAPLog_Default, "Setting SRTP Accessory -> Controller");
+
+    BufferToString(bufferLog, sizeof(bufferLog), accessoryEndpoints->video_crypto_params.master_key,
+        sizeof(accessoryEndpoints->video_crypto_params.master_key));
+    HAPLogInfo(&kHAPLog_Default, "Video Master Key: %s", bufferLog);
     g_object_set(network.sink_srtp, "key", accessoryVideoKeyBuffer,
         "rtcp-auth", authType[accessoryEndpoints->crypto_suite],
         "rtcp-cipher", cipherType[accessoryEndpoints->crypto_suite],
         "rtp-auth", authType[accessoryEndpoints->crypto_suite],
         "rtp-cipher", cipherType[accessoryEndpoints->crypto_suite], NULL);
+    BufferToString(bufferLog, sizeof(bufferLog), accessoryEndpoints->audio_crypto_params.master_key,
+        sizeof(accessoryEndpoints->audio_crypto_params.master_key));
+    HAPLogInfo(&kHAPLog_Default, "Audio Master Key: %s", bufferLog);
     g_object_set(networkAudio.sink_srtp, "key", accessoryAudioKeyBuffer,
         "rtcp-auth", authType[accessoryEndpoints->crypto_suite],
         "rtcp-cipher", cipherType[accessoryEndpoints->crypto_suite],
       "rtp-auth", authType[accessoryEndpoints->crypto_suite],
       "rtp-cipher", cipherType[accessoryEndpoints->crypto_suite], NULL);
 
+    HAPLogInfo(&kHAPLog_Default, "Setting SRTP Controller -> Accessory");
+    BufferToString(bufferLog, sizeof(bufferLog), controllerEndpoints->video_crypto_params.master_key,
+        sizeof(controllerEndpoints->video_crypto_params.master_key));
+    HAPLogInfo(&kHAPLog_Default, "Video Master Key: %s", bufferLog);
     GstCaps *srtpdeccaps = gst_caps_new_simple("application/x-srtcp",
         "ssrc", G_TYPE_UINT, accessoryEndpoints->video_ssrc,
         "srtp-key", GST_TYPE_BUFFER, controllerVideoKeyBuffer,
@@ -469,6 +484,9 @@ void ConfigurePipeline(const Endpoints *controllerEndpoints, const Endpoints *ac
         NULL);
     g_object_set(network.src_srtpcaps, "caps", srtpdeccaps, NULL);
     gst_caps_unref(srtpdeccaps);
+    BufferToString(bufferLog, sizeof(bufferLog), controllerEndpoints->audio_crypto_params.master_key,
+        sizeof(controllerEndpoints->audio_crypto_params.master_key));
+    HAPLogInfo(&kHAPLog_Default, "Video Master Key: %s", bufferLog);
     GstCaps *srtpdeccaps_audio = gst_caps_new_simple("application/x-srtcp",
         "ssrc", G_TYPE_UINT, accessoryEndpoints->audio_ssrc,
         "srtp-key", GST_TYPE_BUFFER, controllerAudioKeyBuffer,

@@ -33,6 +33,7 @@
 #include "Stream.h"
 #include "DB.h"
 #include "TLVHelpers.h"
+#include "LogHelpers.h"
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -197,7 +198,10 @@ static HAPAccessory accessory = { .aid = 1,
 static HAPError BuildSetupEndpointsRead(HAPTLVWriterRef* responseWriter) {
     HAPTLVWriterRef subwriter;
 
-    APPEND_TLV_WRITER_ARR(responseWriter, kHAPSetupEndpointsType_SessionID,accessoryConfiguration.state.endpoints_session_id);
+    char bufferLog [sizeof(accessoryConfiguration.state.endpoints_session_id) * 4];
+
+    APPEND_TLV_WRITER_ARR_LOG(responseWriter, kHAPSetupEndpointsType_SessionID,
+        accessoryConfiguration.state.endpoints_session_id, bufferLog);
 
     const uint8_t success = kHAPTLVValue_SetupEndpointsStatus_Success;
 
@@ -221,6 +225,7 @@ static HAPError BuildSetupEndpointsRead(HAPTLVWriterRef* responseWriter) {
 
     APPEND_TLV_WRITER_NESTED_TLV(responseWriter, &subwriter, kHAPSetupEndpointsType_Address);
 
+
     // --- SRTP Parameters for Video
     CreateNestedTLVWriter(responseWriter, &subwriter);
     APPEND_TLV_WRITER_VAL(&subwriter, kHAPHAPSRTPCryptoParamsType_CryptoSuite, endpoints->crypto_suite);
@@ -234,9 +239,11 @@ static HAPError BuildSetupEndpointsRead(HAPTLVWriterRef* responseWriter) {
         HAPLogError(&kHAPLog_Default, "%s: Out of entropy when writing: video salt", __func__);
         return kHAPError_OutOfResources;
         }
-    APPEND_TLV_WRITER_ARR(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterKey, endpoints->video_crypto_params.master_key);
-    APPEND_TLV_WRITER_ARR(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterSalt,
-        endpoints->video_crypto_params.master_salt);
+
+    APPEND_TLV_WRITER_ARR_LOG(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterKey,
+        endpoints->video_crypto_params.master_key, bufferLog);
+    APPEND_TLV_WRITER_ARR_LOG(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterSalt,
+        endpoints->video_crypto_params.master_salt, bufferLog);
     APPEND_TLV_WRITER_NESTED_TLV(responseWriter, &subwriter, kHAPSetupEndpointsType_SRTPVideoParams);
 
     // --- SRTP Parameters for Audio
@@ -252,9 +259,10 @@ static HAPError BuildSetupEndpointsRead(HAPTLVWriterRef* responseWriter) {
         HAPLogError(&kHAPLog_Default, "%s: Out of entropy when writing: audio salt", __func__);
         return kHAPError_OutOfResources;
         }
-    APPEND_TLV_WRITER_ARR(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterKey, endpoints->audio_crypto_params.master_key);
-    APPEND_TLV_WRITER_ARR(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterSalt,
-        endpoints->audio_crypto_params.master_salt);
+    APPEND_TLV_WRITER_ARR_LOG(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterKey,
+        endpoints->audio_crypto_params.master_key, bufferLog);
+    APPEND_TLV_WRITER_ARR_LOG(&subwriter, kHAPHAPSRTPCryptoParamsType_MasterSalt,
+        endpoints->audio_crypto_params.master_salt, bufferLog);
     APPEND_TLV_WRITER_NESTED_TLV(responseWriter, &subwriter, kHAPSetupEndpointsType_SRTPAudioParams);
 
     if (RAND_bytes((unsigned char*)&endpoints->video_ssrc, sizeof(endpoints->video_ssrc)) != 1) {
@@ -371,7 +379,9 @@ HAPError HandleSelectedRTPStreamConfigRead(
     // const auto *session_control = &accessoryConfiguration.state.selected_rtp_config.session_control;
     const SelectedRTPStream *selectedRTPStream = &accessoryConfiguration.state.selected_rtp_config;
 
-    APPEND_TLV_WRITER_ARR(&subwriter, kHAPSessionControlType_SessionID, selectedRTPStream->session_id);
+    char bufferLog [sizeof(selectedRTPStream->session_id) * 4];
+
+    APPEND_TLV_WRITER_ARR_LOG(&subwriter, kHAPSessionControlType_SessionID, selectedRTPStream->session_id, bufferLog);
     APPEND_TLV_WRITER_VAL(&subwriter, kHAPSessionControlType_Command, selectedRTPStream->command);
     // Append entire sub TLV to outer TLV
     APPEND_TLV_WRITER_NESTED_TLV(responseWriter, &subwriter, kHAPSelectedRTPConfigurationType_SessionControl);
@@ -455,22 +465,20 @@ HAPError HandleSelectedRTPStreamConfigRead(
     return kHAPError_None;
 }
 
-HAPError DecodeSelectedRTPStreamConfigTLV(HAPTLVReaderRef* requestReader) {
+HAPError DecodeSelectedRTPStreamConfigTLV(HAPTLV *selectedVideoParamsTLV, HAPTLV *selectedAudioParamsTLV) {
     HAPTLVReaderRef subreader;
     HAPTLVReaderRef subsubreader;
 
-    HAPTLV selectedVideoParamsTLV, selectedAudioParamsTLV;
-
-    selectedVideoParamsTLV.type = kHAPSelectedRTPConfigurationType_SelectedVideoParams;
-    selectedAudioParamsTLV.type = kHAPSelectedRTPConfigurationType_SelectedAudioParams;
-
-    HAPError err = HAPTLVReaderGetAll(requestReader, (HAPTLV * const[]) {&selectedVideoParamsTLV,
-        &selectedAudioParamsTLV, NULL});
-    if (err) {
-        HAPLogError(&kHAPLog_Default, "Failed to read selected rtp config tlv");
-        HAPAssert(err == kHAPError_InvalidData);
-        return err;
-    }
+    // selectedVideoParamsTLV.type = kHAPSelectedRTPConfigurationType_SelectedVideoParams;
+    // selectedAudioParamsTLV.type = kHAPSelectedRTPConfigurationType_SelectedAudioParams;
+    //
+    // HAPError err = HAPTLVReaderGetAll(requestReader, (HAPTLV * const[]) {&selectedVideoParamsTLV,
+    //     &selectedAudioParamsTLV, NULL});
+    // if (err) {
+    //     HAPLogError(&kHAPLog_Default, "Failed to read selected rtp config tlv");
+    //     HAPAssert(err == kHAPError_InvalidData);
+    //     return err;
+    // }
 
     // if (memcmp(sessionIDTLV.value.bytes, accessoryConfiguration.state.selected_rtp_config.session_id,
     //     sessionIDTLV.value.numBytes) != 0) {
@@ -484,7 +492,7 @@ HAPError DecodeSelectedRTPStreamConfigTLV(HAPTLVReaderRef* requestReader) {
     //     return kHAPError_InvalidState;
     // }
 
-    HAPTLVReaderCreate(&subreader, (void*)selectedVideoParamsTLV.value.bytes, selectedVideoParamsTLV.value.numBytes);
+    HAPTLVReaderCreate(&subreader, (void*)selectedVideoParamsTLV->value.bytes, selectedVideoParamsTLV->value.numBytes);
 
     HAPTLV videoCodecTLV, videoCodecParamsTLV, videoAttributesTLV, videoRTPParamsTLV;
 
@@ -496,7 +504,7 @@ HAPError DecodeSelectedRTPStreamConfigTLV(HAPTLVReaderRef* requestReader) {
     typeof(accessoryConfiguration.state.selected_rtp_config.selected_video_parameters) * videoParams =
         &accessoryConfiguration.state.selected_rtp_config.selected_video_parameters;
 
-    err = HAPTLVReaderGetAll(&subreader, (HAPTLV * const[]){&videoCodecTLV, &videoCodecParamsTLV, &videoAttributesTLV,
+    HAPError err = HAPTLVReaderGetAll(&subreader, (HAPTLV * const[]){&videoCodecTLV, &videoCodecParamsTLV, &videoAttributesTLV,
         &videoRTPParamsTLV, NULL});
 
     if (err) {
@@ -621,7 +629,7 @@ HAPError DecodeSelectedRTPStreamConfigTLV(HAPTLVReaderRef* requestReader) {
         videoRTPParams->min_rtcp_interval = *(const float*)minRTCPTLV.value.bytes;
     }
 
-    HAPTLVReaderCreate(&subreader, (void*)selectedAudioParamsTLV.value.bytes, selectedAudioParamsTLV.value.numBytes);
+    HAPTLVReaderCreate(&subreader, (void*)selectedAudioParamsTLV->value.bytes, selectedAudioParamsTLV->value.numBytes);
 
     HAPTLV audioCodecTLV, audioCodecParamsTLV, audioRTPParamsTLV, comfortNoiseTLV;
 
@@ -749,11 +757,14 @@ HAPError HandleSelectedRTPStreamConfigWrite(
     }
 
     HAPTLVReaderRef subreader;
-    HAPTLV sessionControlTLV;
+    HAPTLV sessionControlTLV, selectedVideoParamsTLV, selectedAudioParamsTLV;
     sessionControlTLV.type = kHAPSelectedRTPConfigurationType_SessionControl;
+    selectedVideoParamsTLV.type = kHAPSelectedRTPConfigurationType_SelectedVideoParams;
+    selectedAudioParamsTLV.type = kHAPSelectedRTPConfigurationType_SelectedAudioParams;
 
 
-    err = HAPTLVReaderGetAll(requestReader, (HAPTLV * const[]) {&sessionControlTLV, NULL});
+    err = HAPTLVReaderGetAll(requestReader, (HAPTLV * const[]) {&sessionControlTLV, &selectedVideoParamsTLV,
+        &selectedAudioParamsTLV, NULL});
     if (err) {
         HAPLogError(&kHAPLog_Default, "Failed to read selected rtp config tlv");
         HAPAssert(err == kHAPError_InvalidData);
@@ -782,7 +793,7 @@ HAPError HandleSelectedRTPStreamConfigWrite(
 
     accessoryConfiguration.state.selected_rtp_config.command = *(const uint8_t*)commandTLV.value.bytes;
     HAPLogError(&kHAPLog_Default, "COMMAND: %u", accessoryConfiguration.state.selected_rtp_config.command);
-
+    char bufferLog[sizeof(accessoryConfiguration.state.selected_rtp_config.session_id) * 4];
     if (accessoryConfiguration.state.selected_rtp_config.command == kHAPTLVValue_SessionControl_Start) {
         if (accessoryConfiguration.state.stream_session_state == STREAMING) {
             HAPLogError(&kHAPLog_Default, "Session attempting to start while already streaming");
@@ -790,12 +801,23 @@ HAPError HandleSelectedRTPStreamConfigWrite(
         }
         memcpy(accessoryConfiguration.state.selected_rtp_config.session_id, sessionIDTLV.value.bytes,
             sessionIDTLV.value.numBytes);
+        HAPLogInfo(&kHAPLog_Default, "New Session ID initialized");
     }
     else if (memcmp(accessoryConfiguration.state.selected_rtp_config.session_id, sessionIDTLV.value.bytes,
         sessionIDTLV.value.numBytes)) {
         HAPLogError(&kHAPLog_Default, "Invalid Session ID");
+        BufferToString(bufferLog, sizeof(bufferLog),
+            accessoryConfiguration.state.selected_rtp_config.session_id,
+            sizeof(accessoryConfiguration.state.selected_rtp_config.session_id));
+        HAPLogError(&kHAPLog_Default, "Current Session ID: %s", bufferLog);
+        BufferToString(bufferLog, sizeof(bufferLog), sessionIDTLV.value.bytes, sessionIDTLV.value.numBytes);
+        HAPLogError(&kHAPLog_Default, "New Session ID: %s", bufferLog);
         return kHAPError_InvalidData;
     }
+
+    BufferToString(bufferLog, sizeof(bufferLog), sessionIDTLV.value.bytes, sessionIDTLV.value.numBytes);
+    HAPLogInfo(&kHAPLog_Default, "Session ID: %s", bufferLog);
+
 
     if (accessoryConfiguration.state.selected_rtp_config.command != kHAPTLVValue_SessionControl_Start &&
         accessoryConfiguration.state.stream_session_state == ENDPOINTS_EXCHANGED) {
@@ -805,7 +827,7 @@ HAPError HandleSelectedRTPStreamConfigWrite(
 
     if (accessoryConfiguration.state.selected_rtp_config.command == kHAPTLVValue_SessionControl_Start ||
         accessoryConfiguration.state.selected_rtp_config.command == kHAPTLVValue_SessionControl_Reconfigure) {
-        err = DecodeSelectedRTPStreamConfigTLV(requestReader);
+        err = DecodeSelectedRTPStreamConfigTLV(&selectedVideoParamsTLV, &selectedAudioParamsTLV);
 
         if (err) {
             HAPLogError(&kHAPLog_Default, "Decoding of RTP Stream Config Write Failed");
@@ -825,7 +847,7 @@ HAPError HandleSelectedRTPStreamConfigWrite(
             memcpy(accessoryConfiguration.state.selected_rtp_config.session_id, sessionIDNULL, sizeof(sessionIDNULL));
             ret = gst_element_set_state (pipeline, GST_STATE_READY);
             if (ret == GST_STATE_CHANGE_FAILURE) {
-                HAPLogError(&kHAPLog_Default, "Unable to set the pipeline to the playing state.");
+                HAPLogError(&kHAPLog_Default, "Unable to reset pipeline state.");
                 gst_object_unref (pipeline);
                 return kHAPError_Unknown;
             }
@@ -858,7 +880,7 @@ HAPError HandleSelectedRTPStreamConfigWrite(
             /* Resume playing */
             ret = gst_element_set_state (pipeline, GST_STATE_PLAYING);
             if (ret == GST_STATE_CHANGE_FAILURE) {
-                HAPLogError(&kHAPLog_Default, "Unable to set the pipeline to the playing state.");
+                HAPLogError(&kHAPLog_Default, "Unable to set the pipeline to the playing from pause state.");
                 gst_object_unref (pipeline);
                 return -1;
             }
@@ -967,12 +989,14 @@ HAPError HandleSetupEndpointsWrite(
         return kHAPError_InvalidData;
     }
 
-    // Copy to respond even if stream already existing
-    memcpy(accessoryConfiguration.state.endpoints_session_id, &sessionIDTLV.value.bytes,
-        sessionIDTLV.value.numBytes);
-    HAPLogInfo(&kHAPLog_Default, "%u %u %u %u %u %u %u %u %u %u %u %u %u %u %u %u",
-            accessoryConfiguration.state.endpoints_session_id[0], accessoryConfiguration.state.endpoints_session_id[1], accessoryConfiguration.state.endpoints_session_id[2], accessoryConfiguration.state.endpoints_session_id[3], accessoryConfiguration.state.endpoints_session_id[4], accessoryConfiguration.state.endpoints_session_id[5], accessoryConfiguration.state.endpoints_session_id[6], accessoryConfiguration.state.endpoints_session_id[7], accessoryConfiguration.state.endpoints_session_id[8], accessoryConfiguration.state.endpoints_session_id[9], accessoryConfiguration.state.endpoints_session_id[10], accessoryConfiguration.state.endpoints_session_id[11], accessoryConfiguration.state.endpoints_session_id[12], accessoryConfiguration.state.endpoints_session_id[13], accessoryConfiguration.state.endpoints_session_id[14], accessoryConfiguration.state.endpoints_session_id[15]);
+    char bufferLog [sizeof(accessoryConfiguration.state.endpoints_session_id) * 4];
 
+    // Copy to respond even if stream already existing
+    memcpy(accessoryConfiguration.state.endpoints_session_id, sessionIDTLV.value.bytes,
+        sessionIDTLV.value.numBytes);
+    BufferToString(bufferLog, sizeof(bufferLog), sessionIDTLV.value.bytes,
+        sessionIDTLV.value.numBytes);
+    HAPLogInfo(&kHAPLog_Default, "Session ID: %s", bufferLog);
 
     accessoryConfiguration.state.new_stream_session = request->session;
 
@@ -1061,6 +1085,12 @@ HAPError HandleSetupEndpointsWrite(
     accessoryConfiguration.state.controller_endpoints.crypto_suite = *(const uint8_t*)cryptoSuiteTLV.value.bytes;
     memcpy(videoCryptoParams->master_key, cryptoMasterKeyTLV.value.bytes, cryptoMasterKeyTLV.value.numBytes);
     memcpy(videoCryptoParams->master_salt, cryptoMasterSaltTLV.value.bytes, cryptoMasterSaltTLV.value.numBytes);
+    BufferToString(bufferLog, sizeof(bufferLog), cryptoMasterKeyTLV.value.bytes,
+        cryptoMasterKeyTLV.value.numBytes);
+    HAPLogInfo(&kHAPLog_Default, "Controller Video Master Key: %s", bufferLog);
+    BufferToString(bufferLog, sizeof(bufferLog), cryptoMasterSaltTLV.value.bytes,
+        cryptoMasterSaltTLV.value.numBytes);
+    HAPLogInfo(&kHAPLog_Default, "Controller Video Master Salt: %s", bufferLog);
 
     // AUDIO CRYPTO SUITE
     HAPTLVReaderCreate(&subReader, (void*)audioParamsTLV.value.bytes, audioParamsTLV.value.numBytes);
@@ -1087,6 +1117,12 @@ HAPError HandleSetupEndpointsWrite(
     }
     memcpy(audioCryptoParams->master_key, cryptoMasterKeyTLV.value.bytes, cryptoMasterKeyTLV.value.numBytes);
     memcpy(audioCryptoParams->master_salt, cryptoMasterSaltTLV.value.bytes, cryptoMasterSaltTLV.value.numBytes);
+    BufferToString(bufferLog, sizeof(bufferLog), cryptoMasterKeyTLV.value.bytes,
+        cryptoMasterKeyTLV.value.numBytes);
+    HAPLogInfo(&kHAPLog_Default, "Controller Audio Master Key: %s", bufferLog);
+    BufferToString(bufferLog, sizeof(bufferLog), cryptoMasterSaltTLV.value.bytes,
+        cryptoMasterSaltTLV.value.numBytes);
+    HAPLogInfo(&kHAPLog_Default, "Controller Audio Master Salt: %s", bufferLog);
 
     // Successfully received controller endpoints
     // accessoryConfiguration.state.stream_session_state = CONTROLLER_ENDPOINTS_SENT;
@@ -1266,7 +1302,7 @@ void AppInitialize(
 
     pipeline = InitPipeline(&accessoryConfiguration.state.accessory_endpoints);
     if (!pipeline) {
-        HAPLogInfo(&kHAPLog_Default, "GStreamer pipeline failed to initialize.");
+        HAPLogError(&kHAPLog_Default, "GStreamer pipeline failed to initialize.");
     }
     /*no-op*/
 }
